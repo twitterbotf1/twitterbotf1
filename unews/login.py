@@ -8,9 +8,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Configuration ---
-EMAIL = os.getenv("TWITTER_un_EMAIL")
-USERNAME = os.getenv("TWITTER_un_USERNAME")
-PASSWORD = os.getenv("TWITTER_un_PASSWORD")
+EMAIL = os.getenv("TWITTER_EMAIL")
+USERNAME = os.getenv("TWITTER_USERNAME")
+PASSWORD = os.getenv("TWITTER_PASSWORD")
 
 # --- Paths ---
 SCRIPT_DIR = Path(__file__).parent
@@ -103,4 +103,21 @@ def main():
             if is_logged_in(page):
                 print("✅ Reused existing session successfully.")
                 sys.exit(0)
-       
+            else:
+                print("⚠️ Session not valid or expired. Starting full login.")
+                browser.close()
+                success = perform_full_login(p)
+                if success:
+                    sys.exit(0)
+                else:
+                    sys.exit(1)
+        except Exception as e:
+            print(f"❌ A critical error occurred in login check: {e}", file=sys.stderr)
+            sys.exit(1)
+        finally:
+            if browser:
+                browser.close()
+
+if __name__ == "__main__":
+    main()
+
