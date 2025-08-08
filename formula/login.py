@@ -12,7 +12,7 @@ USERNAME = os.getenv("TWITTER_USERNAME")
 PASSWORD = os.getenv("TWITTER_PASSWORD")
 
 # --- Paths ---
-# Save screenshots in a top-level folder for easy access
+# Save screenshots in a top-level folder for easy access in the repo
 DEBUG_DIR = Path(__file__).parents[1] / "debug_screenshots" / "formula"
 LOGIN_DATA_DIR = Path(__file__).parent / "login_data"
 
@@ -91,13 +91,10 @@ def perform_full_login(p: Playwright) -> bool:
             browser.close()
 
 def main():
-    # Main logic remains the same...
     if not all([EMAIL, USERNAME, PASSWORD]):
         print("❌ Error: Twitter credentials not set.", file=sys.stderr)
         sys.exit(1)
     with sync_playwright() as p:
-        # ... (The rest of the main function is identical to the previous version)
-        # It will call perform_full_login which now has detailed screenshots.
         browser = None
         try:
             browser = p.chromium.launch_persistent_context(
@@ -107,6 +104,7 @@ def main():
             page = browser.new_page()
             print("Checking for existing valid session...")
             page.goto("https://twitter.com/home", wait_until="load")
+            take_shot(page, "00_check_existing_session") # Screenshot of initial check
 
             if is_logged_in(page):
                 print("✅ Reused existing session successfully.")
