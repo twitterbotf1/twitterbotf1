@@ -1,4 +1,4 @@
-name: Twitter Bot Scheduler
+name: Debug Formula Login
 
 on:
   workflow_dispatch:
@@ -7,44 +7,13 @@ permissions:
   contents: write
 
 jobs:
-  run-twitter-bots:
+  test-formula-login:
     runs-on: ubuntu-latest
     
     env:
-      # Supabase Credentials
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-
-      # --- Twitter Credentials for each bot ---
-      # Formula Bot
-      FORMULA_EMAIL: ${{ secrets.FORMULA_EMAIL }}
-      FORMULA_USERNAME: ${{ secrets.FORMULA_USERNAME }}
-      FORMULA_PASSWORD: ${{ secrets.FORMULA_PASSWORD }}
-
-      # Tech Bot
-      TECH_EMAIL: ${{ secrets.TECH_EMAIL }}
-      TECH_USERNAME: ${{ secrets.TECH_USERNAME }}
-      TECH_PASSWORD: ${{ secrets.TECH_PASSWORD }}
-
-      # Hollywood Bot
-      HOLLYWOOD_EMAIL: ${{ secrets.HOLLYWOOD_EMAIL }}
-      HOLLYWOOD_USERNAME: ${{ secrets.HOLLYWOOD_USERNAME }}
-      HOLLYWOOD_PASSWORD: ${{ secrets.HOLLYWOOD_PASSWORD }}
-      
-      # Movies Bot
-      MOVIES_EMAIL: ${{ secrets.MOVIES_EMAIL }}
-      MOVIES_USERNAME: ${{ secrets.MOVIES_USERNAME }}
-      MOVIES_PASSWORD: ${{ secrets.MOVIES_PASSWORD }}
-
-      # Unews Bot
-      UNEWS_EMAIL: ${{ secrets.UNEWS_EMAIL }}
-      UNEWS_USERNAME: ${{ secrets.UNEWS_USERNAME }}
-      UNEWS_PASSWORD: ${{ secrets.UNEWS_PASSWORD }}
-
-      # News Bot
-      NEWS_EMAIL: ${{ secrets.NEWS_EMAIL }}
-      NEWS_USERNAME: ${{ secrets.NEWS_USERNAME }}
-      NEWS_PASSWORD: ${{ secrets.NEWS_PASSWORD }}
+      TWITTER_EMAIL: ${{ secrets.FORMULA_EMAIL }}
+      TWITTER_USERNAME: ${{ secrets.FORMULA_USERNAME }}
+      TWITTER_PASSWORD: ${{ secrets.FORMULA_PASSWORD }}
 
     steps:
       - name: Checkout repository
@@ -61,26 +30,24 @@ jobs:
       - name: Install Playwright browsers
         run: playwright install chromium
 
-      # Run the controller. If it fails, we continue anyway to commit the screenshots.
-      - name: Run Main Bot Controller
-        run: python main_controller.py || true
+      # Run the script. If it fails, continue anyway so we can commit screenshots.
+      - name: Run Formula Login Script
+        run: python formula/login.py || true
 
-      # This is the corrected commit step.
-      - name: Commit session data and debug screenshots
+      # NEW STEP: Commit the screenshots folder.
+      - name: Commit Debug Screenshots
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions-bot@github.com'
           
-          # Use "|| true" to prevent errors if the directories don't exist yet.
-          # This tells git: "Try to add these folders, but if you can't find them, that's okay."
-          git add '*/login_data/' || true
+          # Add the screenshots folder. Use "|| true" in case it wasn't created.
           git add debug_screenshots/ || true
           
-          # Check if there are any changes to commit
+          # Check if there are any changes to commit.
           if ! git diff --staged --quiet; then
-            echo "Changes detected. Committing..."
-            git commit -m "chore: Update session and debug screenshots [skip ci]"
+            echo "Changes detected in debug_screenshots. Committing..."
+            git commit -m "chore: Add debug screenshots from formula login test"
             git push
           else
-            echo "No changes to commit."
+            echo "No new screenshots to commit."
           fi
