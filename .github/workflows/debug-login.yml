@@ -1,12 +1,8 @@
-# A simple workflow to debug the formula login process in isolation.
 name: Debug Formula Login
 
 on:
-  # This makes the workflow manually runnable from the Actions tab.
   workflow_dispatch:
 
-# We still need write permissions in case the script creates the login_data folder
-# and we decide later to commit it.
 permissions:
   contents: write
 
@@ -14,37 +10,44 @@ jobs:
   test-formula-login:
     runs-on: ubuntu-latest
     
-    # This 'env' block provides the credentials specifically for this job.
-    # The login script will read these as environment variables.
     env:
-      # The login.py script expects these generic names.
-      # We map the formula-specific secrets to them.
       TWITTER_EMAIL: ${{ secrets.FORMULA_EMAIL }}
       TWITTER_USERNAME: ${{ secrets.FORMULA_USERNAME }}
       TWITTER_PASSWORD: ${{ secrets.FORMULA_PASSWORD }}
 
     steps:
-      # Step 1: Check out the repository's code so the runner can access it.
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Step 2: Set up the Python environment.
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      # Step 3: Install all Python packages listed in your requirements.txt file.
       - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
-      # Step 4: Install the Chromium browser needed by Playwright.
       - name: Install Playwright browsers
         run: playwright install chromium
 
-      # Step 5: Run ONLY the formula/login.py script.
-      # This is the only action this workflow performs.
+      # Run the script. If it fails, continue anyway so we can commit screenshots.
       - name: Run Formula Login Script
-        run: python formula/login.py
+        run: python formula/login.py || true
+
+      # NEW STEP: Commit the screenshots folder.
+      - name: Commit Debug Screenshots
+        run: |
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'github-actions-bot@github.com'
+          
+          # Add the screenshots folder. Use "|| true" in case it wasn't created.
+          git add debug_screenshots/ || true
+          
+          # Check if there are any changes to commit.
+          if ! git diff --staged --quiet; then
+            echo "Changes detected in debug_screenshots. Committing..."
+            git commit -m "chore: Add debug screenshots from formula login test"
+            git push
+          else
+            echo "No new screenshots to commit."
+          fi
