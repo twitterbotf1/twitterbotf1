@@ -4,7 +4,6 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright, Page, Playwright
 from dotenv import load_dotenv
 
-# Load .env file for local testing
 load_dotenv()
 
 # --- Configuration ---
@@ -13,33 +12,28 @@ USERNAME = os.getenv("TWITTER_USERNAME")
 PASSWORD = os.getenv("TWITTER_PASSWORD")
 
 # --- Paths ---
-SCRIPT_DIR = Path(__file__).parent
-LOGIN_DATA_DIR = SCRIPT_DIR / "login_data"
-# --- DEBUGGING ADDITION ---
-DEBUG_DIR = SCRIPT_DIR / "debug_login"
-DEBUG_DIR.mkdir(exist_ok=True)
+# Save screenshots in a top-level folder for easy access
+DEBUG_DIR = Path(__file__).parents[1] / "debug_screenshots" / "formula"
+LOGIN_DATA_DIR = Path(__file__).parent / "login_data"
 
+# Ensure directories exist
+LOGIN_DATA_DIR.mkdir(exist_ok=True)
+DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
-# This text helps detect if Twitter is asking for username verification
 CHECK_TEXT = "Enter your phone number or username"
 
-
-# --- DEBUGGING ADDITION ---
 def take_shot(page: Page, name: str):
-    """Saves a screenshot for debugging purposes."""
+    """Saves a screenshot for debugging."""
     page.screenshot(path=DEBUG_DIR / f"{name}.png")
-    print(f"-> Screenshot saved for debugging: {name}.png")
-
+    print(f"-> Screenshot saved: {name}.png")
 
 def is_logged_in(page: Page) -> bool:
-    """Checks if the page shows a logged-in state by looking for the main timeline."""
+    """Checks if the page shows a logged-in state."""
     page.wait_for_timeout(4000)
-    timeline_visible = page.locator('[data-testid="primaryColumn"]').is_visible()
-    return timeline_visible
-
+    return page.locator('[data-testid="primaryColumn"]').is_visible()
 
 def perform_full_login(p: Playwright) -> bool:
-    """Performs a full, from-scratch login flow. Returns True on success, False on failure."""
+    """Performs a full login, screenshotting every step."""
     print("🚀 Performing a full, step-by-step login...")
     browser = None
     try:
@@ -50,61 +44,62 @@ def perform_full_login(p: Playwright) -> bool:
         )
         page = browser.new_page()
 
-        # Step 1: Go to login page
         page.goto("https://twitter.com/login")
         page.wait_for_timeout(5000)
+        take_shot(page, "01_start_page")
 
-        # Step 2: Enter Email
         page.locator('input[name="text"]').fill(EMAIL)
         page.wait_for_timeout(1000)
+        take_shot(page, "02_email_entered")
+
         page.locator("text=Next").click()
         page.wait_for_timeout(3000)
+        take_shot(page, "03_after_email_next")
 
-        # Step 3: Handle extra verification check
         if CHECK_TEXT in page.inner_text("body"):
             print("🔹 Extra verification detected. Entering username.")
             page.locator('input[name="text"]').fill(USERNAME)
             page.wait_for_timeout(1000)
+            take_shot(page, "04_extra_username_entered")
+
             page.locator("text=Next").click()
             page.wait_for_timeout(3000)
+            take_shot(page, "05_after_username_next")
 
-        # Step 4: Enter Password
         page.locator('input[name="password"]').fill(PASSWORD)
         page.wait_for_timeout(1000)
+        take_shot(page, "06_password_entered")
+
         page.locator('[data-testid="LoginForm_Login_Button"]').click()
         page.wait_for_timeout(7000)
+        take_shot(page, "07_after_final_login_click")
 
-        # Step 5: Final Check
         if is_logged_in(page):
-            print("✅ Full login successful. Session data has been saved.")
+            print("✅ Full login successful.")
             return True
         else:
-            # --- DEBUGGING ADDITION ---
-            take_shot(page, "final_login_failure")
-            print("❌ Full login failed after entering credentials.", file=sys.stderr)
+            print("❌ Full login failed.", file=sys.stderr)
             return False
 
     except Exception as e:
-        # --- DEBUGGING ADDITION ---
         if 'page' in locals():
-             take_shot(page, "login_exception")
+             take_shot(page, "99_exception")
         print(f"❌ An error occurred during the login process: {e}", file=sys.stderr)
         return False
     finally:
         if browser:
             browser.close()
 
-
 def main():
-    """Main function to ensure a valid login session exists."""
+    # Main logic remains the same...
     if not all([EMAIL, USERNAME, PASSWORD]):
-        print("❌ Error: TWITTER_EMAIL, USERNAME, and PASSWORD must be set in secrets.", file=sys.stderr)
-        sys.it(1)
-
+        print("❌ Error: Twitter credentials not set.", file=sys.stderr)
+        sys.exit(1)
     with sync_playwright() as p:
+        # ... (The rest of the main function is identical to the previous version)
+        # It will call perform_full_login which now has detailed screenshots.
         browser = None
         try:
-            # First, try to reuse the existing session.
             browser = p.chromium.launch_persistent_context(
                 user_data_dir=str(LOGIN_DATA_DIR),
                 headless=True
