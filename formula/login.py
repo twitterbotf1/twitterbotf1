@@ -15,12 +15,20 @@ PASSWORD = os.getenv("TWITTER_PASSWORD")
 # --- Paths ---
 SCRIPT_DIR = Path(__file__).parent
 LOGIN_DATA_DIR = SCRIPT_DIR / "login_data"
+# --- DEBUGGING ADDITION ---
+DEBUG_DIR = SCRIPT_DIR / "debug_login"
+DEBUG_DIR.mkdir(exist_ok=True)
 
-# Ensure login data directory exists
-LOGIN_DATA_DIR.mkdir(exist_ok=True)
 
 # This text helps detect if Twitter is asking for username verification
 CHECK_TEXT = "Enter your phone number or username"
+
+
+# --- DEBUGGING ADDITION ---
+def take_shot(page: Page, name: str):
+    """Saves a screenshot for debugging purposes."""
+    page.screenshot(path=DEBUG_DIR / f"{name}.png")
+    print(f"-> Screenshot saved for debugging: {name}.png")
 
 
 def is_logged_in(page: Page) -> bool:
@@ -71,10 +79,15 @@ def perform_full_login(p: Playwright) -> bool:
             print("✅ Full login successful. Session data has been saved.")
             return True
         else:
+            # --- DEBUGGING ADDITION ---
+            take_shot(page, "final_login_failure")
             print("❌ Full login failed after entering credentials.", file=sys.stderr)
             return False
 
     except Exception as e:
+        # --- DEBUGGING ADDITION ---
+        if 'page' in locals():
+             take_shot(page, "login_exception")
         print(f"❌ An error occurred during the login process: {e}", file=sys.stderr)
         return False
     finally:
@@ -86,7 +99,7 @@ def main():
     """Main function to ensure a valid login session exists."""
     if not all([EMAIL, USERNAME, PASSWORD]):
         print("❌ Error: TWITTER_EMAIL, USERNAME, and PASSWORD must be set in secrets.", file=sys.stderr)
-        sys.exit(1)
+        sys.it(1)
 
     with sync_playwright() as p:
         browser = None
@@ -120,4 +133,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
