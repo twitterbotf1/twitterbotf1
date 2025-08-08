@@ -8,9 +8,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Configuration ---
-EMAIL = os.getenv("TWITTER_Formula_EMAIL")
-USERNAME = os.getenv("TWITTER_Formula_USERNAME")
-PASSWORD = os.getenv("TWITTER_Formula_PASSWORD")
+EMAIL = os.getenv("TWITTER_EMAIL")
+USERNAME = os.getenv("TWITTER_USERNAME")
+PASSWORD = os.getenv("TWITTER_PASSWORD")
 
 # --- Paths ---
 SCRIPT_DIR = Path(__file__).parent
@@ -120,3 +120,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
