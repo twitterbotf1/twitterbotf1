@@ -9,7 +9,6 @@ import pytz
 from playwright.sync_api import sync_playwright, Page
 from dotenv import load_dotenv
 
-# Import our new, separated logic
 from tweeting_logic import post_now, schedule_post
 
 load_dotenv()
@@ -119,8 +118,29 @@ def main():
                         continue
 
                     tweet_text = f'"{title}"\n\n{url}'
-                    item_time = pytz.utc.localize(datetime.fromisoformat(time_str.replace("Z", ""))).astimezone(TIMEZONE)
                     item_id = f"{i+1}_{url.split('/')[-1]}"
+
+                    # --- THIS IS THE CORRECTED LOGIC ---
+                    # 1. Remove any timezone info from the end of the string.
+                    if '+' in time_str:
+                        time_str = time_str.split('+')[0]
+                    # 2. Parse the string into a "naive" datetime object (no timezone).
+                    naive_dt = datetime.fromisoformat(time_str)
+                    # 3. Tell Python that this naive time is in the IST timezone.
+                    item_time = TIMEZONE.localize(naive_dt)
+                    # --- END OF CORRECTION ---
+
+                    # --- Timestamp Debugging Block ---
+                    print("\n--- TIMESTAMP DEBUG ---")
+                    print(f"Original DB String:   {item.get('time')}")
+                    print(f"Current IST Time:       {now_ist.isoformat()}")
+                    print(f"'Post Now' Threshold:   {post_now_threshold.isoformat()}")
+                    print(f"Item Time (as IST):     {item_time.isoformat()}")
+                    comparison_result = item_time <= post_now_threshold
+                    print(f"Comparison Result:      {comparison_result}")
+                    decision = "Post Now" if comparison_result else "Schedule"
+                    print(f"--> Decision: {decision}")
+                    print("-----------------------\n")
 
                     if item_time <= post_now_threshold:
                         post_now(page, tweet_text, log_page, item_id)
