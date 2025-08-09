@@ -20,8 +20,8 @@ BOT_CATEGORY = os.getenv("BOT_CATEGORY")
 
 # --- Paths & Directories ---
 LOGIN_DATA_DIR = Path(f"./{BOT_CATEGORY}/login_data")
-SCREENSHOT_DIR = Path(f"./debug_screenshots/{BOT_CATEGORY}")
-HTML_DEBUG_DIR = Path(f"./debug_html/{BOT_CATEGORY}")
+# Unified debug directory for logs, screenshots, and html
+DEBUG_DIR = Path(f"./debug/{BOT_CATEGORY}")
 TEMP_OTP_DIR = Path(f"./{BOT_CATEGORY}/temp_otp_repo")
 TIMEZONE = pytz.timezone("Asia/Kolkata")
 
@@ -32,27 +32,14 @@ OTP_CHECK_TEXT = "check your email"
 EXTRA_VERIFICATION_TEXT = "unusual login activity"
 
 
-# --- Helper Function: take_shot ---
-def take_shot(page: Page, name: str):
-    SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
-    screenshot_path = SCREENSHOT_DIR / f"{name}.png"
-    print(f"📸 Taking screenshot: {screenshot_path}")
-    try:
-        page.screenshot(path=screenshot_path)
-    except Exception as e:
-        print(f"⚠️ Could not take screenshot: {e}", file=sys.stderr)
-
-
-# --- Helper Function: save_html ---
-def save_html(page: Page, name: str):
-    HTML_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-    html_path = HTML_DEBUG_DIR / f"{name}.html"
-    print(f"📄 Saving HTML snapshot: {html_path}")
-    try:
-        with open(html_path, "w", encoding="utf-8") as f:
-            f.write(page.content())
-    except Exception as e:
-        print(f"⚠️ Could not save HTML: {e}", file=sys.stderr)
+# --- Unified Helper Function for Logging ---
+def log_page(page: Page, name: str):
+    """Saves a screenshot, HTML, and inner text for debugging."""
+    DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+    time.sleep(2) # Allow page to settle
+    page.screenshot(path=DEBUG_DIR / f"{name}.png")
+    (DEBUG_DIR / f"{name}.html").write_text(page.content(), encoding="utf-8")
+    print(f"✅ Logged page state: {name}")
 
 
 # --- Helper Function: is_logged_in ---
@@ -68,46 +55,34 @@ def is_logged_in(page: Page):
 def perform_login(page: Page):
     print("🚀 Starting full login process...")
     page.goto("https://x.com/login", timeout=60000)
-    page.wait_for_timeout(5000)
-    take_shot(page, "01_login_start")
+    log_page(page, "01_login_start")
 
-    print("-> Typing email...")
     page.mouse.click(580, 350)
     page.keyboard.type(EMAIL)
-    take_shot(page, "02_login_email_entered")
     page.mouse.click(640, 430)
     page.wait_for_timeout(5000)
-    take_shot(page, "03_login_after_email_next")
+    log_page(page, "02_login_after_email")
 
     if EXTRA_VERIFICATION_TEXT in page.inner_text("body").lower():
-        print("-> Extra verification needed. Entering username...")
         page.mouse.click(520, 320)
         page.keyboard.type(USERNAME)
-        take_shot(page, "04_login_username_entered")
         page.mouse.click(640, 640)
         page.wait_for_timeout(5000)
-        take_shot(page, "05_login_after_username_next")
+        log_page(page, "03_login_after_username")
 
-    print("-> Typing password...")
     page.mouse.click(500, 300)
     page.keyboard.type(PASSWORD)
-    take_shot(page, "06_login_password_entered")
     page.mouse.click(640, 590)
     page.wait_for_timeout(7000)
-    take_shot(page, "07_login_after_password_click")
-
-    if OTP_CHECK_TEXT in page.inner_text("body").lower():
-        print("-> OTP screen detected. Halting for this version.")
-        take_shot(page, "08_login_otp_failure")
-        return False
+    log_page(page, "04_login_after_password")
 
     if not is_logged_in(page):
-        print("❌ Login failed. Main feed was not visible.", file=sys.stderr)
-        take_shot(page, "98_login_final_failure")
+        print("❌ Login failed.", file=sys.stderr)
+        log_page(page, "98_login_failure")
         return False
 
     print("✅ Full login successful.")
-    take_shot(page, "09_login_final_success")
+    log_page(page, "05_login_success")
     return True
 
 
@@ -121,82 +96,79 @@ def perform_tweeting(page: Page, items_to_process: list):
         title = item.get("title", "No Title")
         url = item.get("url")
         time_str = item.get("time")
-        item_id = url.split('/')[-1] if url else f"item_{i}"
 
         if not url or not time_str:
             print(f"⚠️ Skipping item due to missing URL/time: '{title}'")
             continue
 
         print(f"\n--- Processing item {i+1}: '{title}' ---")
-        
-        # --- CORRECTED: Ensures title is wrapped in quotes ---
         tweet_text = f'"{title}"\n\n{url}'
-
-        print("-> Clicking 'New Tweet' button...")
-        page.locator('[data-testid="SideNav_NewTweet_Button"]').click()
-        page.wait_for_timeout(3000)
-        take_shot(page, f"10_tweet_{item_id}_new_tweet_clicked")
-
-        print("-> Clicking tweet textarea using coordinates (450, 130) and typing...")
-        page.mouse.click(450, 130)
-        page.wait_for_timeout(500)
-        page.keyboard.type(tweet_text, delay=30)
-        take_shot(page, f"11_tweet_{item_id}_textarea_filled")
-
-        print("-> Waiting for link preview card...")
-        page.wait_for_timeout(7000)
-        take_shot(page, f"12_tweet_{item_id}_link_preview")
-
         item_time = pytz.utc.localize(datetime.fromisoformat(time_str.replace("Z", ""))).astimezone(TIMEZONE)
 
         if item_time <= post_now_threshold:
-            print("-> Attempting to POST NOW using CTRL+ENTER.")
+            # --- EXECUTE "POST NOW" LOGIC ---
+            print("-> Logic: Post Now (from main feed)")
+            page.goto("https://x.com/home", wait_until="load") # Ensure we are on the home feed
+            page.wait_for_selector('div[data-testid="tweetTextarea_0"]', timeout=15000)
+            log_page(page, f"A_{i+1}_postnow_homepage_loaded")
             
-            # --- NEW STRATEGY: Wait for button to be enabled, then use shortcut ---
-            # 1. A safety check to ensure the post button is enabled before we try the shortcut
-            enabled_post_button = page.locator('[data-testid="tweetButton"]:not([aria-disabled="true"])')
-            enabled_post_button.wait_for(timeout=10000) # Wait up to 10s for it to become clickable
-            
-            # 2. Press Control+Enter to post
-            page.keyboard.press("Control+Enter")
-            # --- END OF NEW STRATEGY ---
+            print("--> Typing tweet...")
+            page.fill('div[data-testid="tweetTextarea_0"]', tweet_text)
+            page.wait_for_timeout(3000) 
+            log_page(page, f"B_{i+1}_postnow_tweet_typed")
 
-            take_shot(page, f"13_tweet_{item_id}_posted_now")
-            print("✅ Tweet posted successfully.")
+            print("--> Clicking the Post button...")
+            post_button = page.locator('button[data-testid="tweetButtonInline"]')
+            post_button.click(timeout=10000)
+            page.wait_for_timeout(5000)
+            log_page(page, f"C_{i+1}_postnow_tweet_posted")
+            print("✅ Tweet posted successfully!")
+
         else:
-            print("-> Attempting to SCHEDULE.")
-            page.locator('[data-testid="scheduleOption"]').click()
+            # --- EXECUTE "SCHEDULE" LOGIC ---
+            print("-> Logic: Schedule (from modal)")
+            page.goto("https://twitter.com/home", wait_until="load") # Start from a clean slate on home
+            page.wait_for_timeout(5000)
+            log_page(page, f"A_{i+1}_schedule_home_loaded")
+
+            print("--> Opening tweet composer...")
+            page.click('[data-testid="SideNav_NewTweet_Button"]')
             page.wait_for_timeout(2000)
-            take_shot(page, f"13_tweet_{item_id}_schedule_dialog_open")
-            
+            log_page(page, f"B_{i+1}_schedule_composer_opened")
+
+            print("--> Typing tweet...")
+            page.fill('div[data-testid="tweetTextarea_0"]', tweet_text)
+            log_page(page, f"C_{i+1}_schedule_text_filled")
+
+            print("--> Opening schedule modal...")
+            page.click("button[data-testid='scheduleOption']")
+            page.wait_for_timeout(2000)
+            log_page(page, f"D_{i+1}_schedule_modal_opened")
+
+            # Set date/time from Supabase data
             schedule_date = item_time.strftime("%Y-%m-%d")
-            schedule_hour = item_time.strftime("%-I")
-            schedule_minute = item_time.strftime("%M")
-            schedule_ampm = item_time.strftime("%p")
-            
-            print("--> Filling schedule time...")
-            page.locator('input[type="date"]').fill(schedule_date)
-            page.select_option("select[aria-label='Hour']", schedule_hour)
-            page.select_option("select[aria-label='Minute']", schedule_minute)
-            page.select_option("select[aria-label='AM/PM']", schedule_ampm)
-            take_shot(page, f"14_tweet_{item_id}_schedule_time_filled")
+            hour = item_time.strftime("%I").lstrip("0")
+            minute = item_time.strftime("%M")
+            ampm = item_time.strftime("%p")
+            print(f"--> Setting schedule: {schedule_date} {hour}:{minute} {ampm}")
+            page.fill('input[type="date"]', schedule_date)
+            page.select_option("select#SELECTOR_4", hour)
+            page.select_option("select#SELECTOR_5", minute)
+            page.select_option("select#SELECTOR_6", ampm)
+            log_page(page, f"E_{i+1}_schedule_date_time_set")
 
-            print("--> Confirming schedule time...")
-            page.locator('[data-testid="scheduledConfirmationPrimaryAction"]').click()
-            page.wait_for_timeout(1000)
-            take_shot(page, f"15_tweet_{item_id}_schedule_confirmed")
+            print("--> Confirming schedule modal...")
+            page.click("button[data-testid='scheduledConfirmationPrimaryAction']")
+            page.wait_for_timeout(3000)
+            log_page(page, f"F_{i+1}_schedule_modal_confirmed")
             
-            print("--> Clicking final 'Schedule' button using focus and enter...")
-            schedule_button = page.locator('[data-testid="tweetButton"]:not([aria-disabled="true"])')
-            schedule_button.wait_for(timeout=10000)
-            schedule_button.focus()
-            page.keyboard.press("Enter")
-
-            take_shot(page, f"16_tweet_{item_id}_scheduled_final")
-            print("✅ Tweet scheduled successfully.")
-        
-        print("-> Waiting 5 seconds before next item...")
-        page.wait_for_timeout(5000)
+            print("--> Finalizing tweet scheduling...")
+            final_btn = page.locator('button[data-testid="tweetButton"]')
+            final_btn.wait_for(state="visible", timeout=15000)
+            final_btn.click(force=True, timeout=10000)
+            page.wait_for_timeout(4000)
+            log_page(page, f"G_{i+1}_schedule_tweet_scheduled_final")
+            print("✅ Tweet successfully scheduled!")
 
 
 # --- Main Orchestration ---
@@ -225,18 +197,16 @@ def main():
             page = browser.new_page()
 
             page.goto("https://twitter.com/home", timeout=60000)
-            take_shot(page, "00_init_check_login")
-
+            log_page(page, "00_init_check_login")
+            
             login_needed = "login" in page.url or not is_logged_in(page)
 
             if login_needed:
                 print("⚠️ Session is invalid or expired. A full login is required.")
                 if not perform_login(page):
                      raise Exception("Login failed, cannot proceed to tweeting.")
-                save_html(page, "homepage_after_new_login")
             else:
                 print("✅ Reused existing session successfully.")
-                save_html(page, "homepage_after_reused_session")
 
             if items_to_process:
                 perform_tweeting(page, items_to_process)
@@ -244,13 +214,12 @@ def main():
                 print("ℹ️ No items in the data payload to tweet.")
 
             print(f"--- Session for bot '{BOT_CATEGORY}' finished successfully. ---")
-            take_shot(page, "99_final_success")
+            log_page(page, "99_final_success")
 
         except Exception as e:
             print(f"❌ A critical error occurred during the session for '{BOT_CATEGORY}': {e}", file=sys.stderr)
             if 'page' in locals():
-                take_shot(page, "99_CRITICAL_FAILURE")
-                save_html(page, "page_on_failure")
+                log_page(page, "99_CRITICAL_FAILURE")
             sys.exit(1)
         finally:
             if browser:
