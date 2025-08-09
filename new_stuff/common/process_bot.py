@@ -108,7 +108,7 @@ def perform_login(page: Page):
         print("❌ Login failed. Main feed was not visible.", file=sys.stderr)
         take_shot(page, "98_login_final_failure")
         return False
-    
+
     print("✅ Full login successful.")
     take_shot(page, "09_login_final_success")
     return True
@@ -116,7 +116,7 @@ def perform_login(page: Page):
 
 # --- Sub-Process: Tweeting ---
 def perform_tweeting(page: Page, items_to_process: list):
-    """Contains the logic for posting or scheduling tweets."""
+    """Contains the logic for posting or scheduling tweets using coordinate-based clicks."""
     print("\n🚀 Starting tweeting process...")
     now_ist = datetime.now(TIMEZONE)
     post_now_threshold = now_ist + timedelta(minutes=5)
@@ -134,24 +134,21 @@ def perform_tweeting(page: Page, items_to_process: list):
         print(f"\n--- Processing item {i+1}: '{title}' ---")
         tweet_text = f'"{title}"\n\n{url}'
 
-        print("-> Clicking 'New Tweet' button...")
-        page.locator('[data-testid="SideNav_NewTweet_Button"]').click()
+        print("-> Clicking 'New Tweet' button using coordinates (130, 450)...")
+        page.mouse.click(130, 450)
         page.wait_for_timeout(3000)
         take_shot(page, f"10_tweet_{item_id}_new_tweet_clicked")
 
-        # --- THIS IS THE NEW FIX ---
-        # Click the textarea to make sure the cursor is active.
-        print("-> Clicking tweet textarea to focus...")
-        page.locator('[data-testid="tweetTextarea_0"]').click()
-        page.wait_for_timeout(500) # Brief pause to ensure focus is set.
+        # --- THIS IS THE CORRECTED LINE ---
+        print("-> Clicking tweet textarea to focus using coordinates (450, 130)...")
+        page.mouse.click(450, 130)
+        page.wait_for_timeout(500)
 
-        # Use the page's keyboard to type directly, simulating a real user.
         print("-> Typing text using direct keyboard simulation...")
         page.keyboard.type(tweet_text, delay=30)
-        # --- END OF NEW FIX ---
 
         take_shot(page, f"11_tweet_{item_id}_textarea_filled")
-        
+
         print("-> Waiting for link preview card...")
         page.wait_for_timeout(7000)
         take_shot(page, f"12_tweet_{item_id}_link_preview")
@@ -168,12 +165,12 @@ def perform_tweeting(page: Page, items_to_process: list):
             page.locator('[data-testid="scheduleOption"]').click()
             page.wait_for_timeout(2000)
             take_shot(page, f"13_tweet_{item_id}_schedule_dialog_open")
-            
+
             schedule_date = item_time.strftime("%Y-%m-%d")
             schedule_hour = item_time.strftime("%-I")
             schedule_minute = item_time.strftime("%M")
             schedule_ampm = item_time.strftime("%p")
-            
+
             print("--> Filling schedule time...")
             page.locator('input[type="date"]').fill(schedule_date)
             page.select_option("select[aria-label='Hour']", schedule_hour)
@@ -185,12 +182,12 @@ def perform_tweeting(page: Page, items_to_process: list):
             page.locator('[data-testid="scheduledConfirmationPrimaryAction"]').click()
             page.wait_for_timeout(1000)
             take_shot(page, f"15_tweet_{item_id}_schedule_confirmed")
-            
+
             print("--> Clicking final 'Schedule' button...")
             page.locator('[data-testid="tweetButton"]').click()
             take_shot(page, f"16_tweet_{item_id}_scheduled_final")
             print("✅ Tweet scheduled successfully.")
-        
+
         print("-> Waiting 5 seconds before next item...")
         page.wait_for_timeout(5000)
 
@@ -201,7 +198,7 @@ def main():
         sys.exit("❌ FATAL: Credentials or BOT_CATEGORY environment variables not set.")
     if len(sys.argv) < 2:
         sys.exit("❌ FATAL: No data passed to the script.")
-        
+
     try:
         items_to_process = json.loads(sys.argv[1])
     except json.JSONDecodeError:
@@ -222,7 +219,7 @@ def main():
 
             page.goto("https://twitter.com/home", timeout=60000)
             take_shot(page, "00_init_check_login")
-            
+
             login_needed = "login" in page.url or not is_logged_in(page)
 
             if login_needed:
