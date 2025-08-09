@@ -139,8 +139,15 @@ def perform_tweeting(page: Page, items_to_process: list):
         page.wait_for_timeout(3000)
         take_shot(page, f"10_tweet_{item_id}_new_tweet_clicked")
 
-        print("-> Filling tweet textarea...")
-        page.locator('[data-testid="tweetTextarea_0"]').fill(tweet_text)
+        # Click the textarea to focus it, then type the text
+        print("-> Clicking tweet textarea to focus...")
+        textarea_locator = page.locator('[data-testid="tweetTextarea_0"]')
+        textarea_locator.click()
+        page.wait_for_timeout(500)
+
+        print("-> Typing tweet text...")
+        textarea_locator.press_sequentially(tweet_text, delay=50)
+        
         take_shot(page, f"11_tweet_{item_id}_textarea_filled")
         
         print("-> Waiting for link preview card...")
