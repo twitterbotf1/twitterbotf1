@@ -34,7 +34,6 @@ EXTRA_VERIFICATION_TEXT = "unusual login activity"
 
 # --- Helper Function: take_shot ---
 def take_shot(page: Page, name: str):
-    """Saves a screenshot for debugging the entire process."""
     SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
     screenshot_path = SCREENSHOT_DIR / f"{name}.png"
     print(f"📸 Taking screenshot: {screenshot_path}")
@@ -46,7 +45,6 @@ def take_shot(page: Page, name: str):
 
 # --- Helper Function: save_html ---
 def save_html(page: Page, name: str):
-    """Saves the current HTML of the page for debugging element attributes."""
     HTML_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
     html_path = HTML_DEBUG_DIR / f"{name}.html"
     print(f"📄 Saving HTML snapshot: {html_path}")
@@ -68,7 +66,6 @@ def is_logged_in(page: Page):
 
 # --- Sub-Process: Login ---
 def perform_login(page: Page):
-    """Contains the logic to perform a full, step-by-step login."""
     print("🚀 Starting full login process...")
     page.goto("https://x.com/login", timeout=60000)
     page.wait_for_timeout(5000)
@@ -116,7 +113,6 @@ def perform_login(page: Page):
 
 # --- Sub-Process: Tweeting ---
 def perform_tweeting(page: Page, items_to_process: list):
-    """Contains the logic for posting or scheduling tweets using coordinate-based clicks."""
     print("\n🚀 Starting tweeting process...")
     now_ist = datetime.now(TIMEZONE)
     post_now_threshold = now_ist + timedelta(minutes=5)
@@ -132,21 +128,19 @@ def perform_tweeting(page: Page, items_to_process: list):
             continue
 
         print(f"\n--- Processing item {i+1}: '{title}' ---")
+        
+        # --- CORRECTED: Ensures title is wrapped in quotes ---
         tweet_text = f'"{title}"\n\n{url}'
 
-        print("-> Clicking 'New Tweet' button using coordinates (130, 450)...")
-        page.mouse.click(130, 450)
+        print("-> Clicking 'New Tweet' button...")
+        page.locator('[data-testid="SideNav_NewTweet_Button"]').click()
         page.wait_for_timeout(3000)
         take_shot(page, f"10_tweet_{item_id}_new_tweet_clicked")
 
-        # --- THIS IS THE CORRECTED LINE ---
-        print("-> Clicking tweet textarea to focus using coordinates (450, 130)...")
+        print("-> Clicking tweet textarea using coordinates (450, 130) and typing...")
         page.mouse.click(450, 130)
         page.wait_for_timeout(500)
-
-        print("-> Typing text using direct keyboard simulation...")
         page.keyboard.type(tweet_text, delay=30)
-
         take_shot(page, f"11_tweet_{item_id}_textarea_filled")
 
         print("-> Waiting for link preview card...")
@@ -156,8 +150,17 @@ def perform_tweeting(page: Page, items_to_process: list):
         item_time = pytz.utc.localize(datetime.fromisoformat(time_str.replace("Z", ""))).astimezone(TIMEZONE)
 
         if item_time <= post_now_threshold:
-            print("-> Attempting to POST NOW.")
-            page.locator('[data-testid="tweetButton"]').click()
+            print("-> Attempting to POST NOW using CTRL+ENTER.")
+            
+            # --- NEW STRATEGY: Wait for button to be enabled, then use shortcut ---
+            # 1. A safety check to ensure the post button is enabled before we try the shortcut
+            enabled_post_button = page.locator('[data-testid="tweetButton"]:not([aria-disabled="true"])')
+            enabled_post_button.wait_for(timeout=10000) # Wait up to 10s for it to become clickable
+            
+            # 2. Press Control+Enter to post
+            page.keyboard.press("Control+Enter")
+            # --- END OF NEW STRATEGY ---
+
             take_shot(page, f"13_tweet_{item_id}_posted_now")
             print("✅ Tweet posted successfully.")
         else:
@@ -165,12 +168,12 @@ def perform_tweeting(page: Page, items_to_process: list):
             page.locator('[data-testid="scheduleOption"]').click()
             page.wait_for_timeout(2000)
             take_shot(page, f"13_tweet_{item_id}_schedule_dialog_open")
-
+            
             schedule_date = item_time.strftime("%Y-%m-%d")
             schedule_hour = item_time.strftime("%-I")
             schedule_minute = item_time.strftime("%M")
             schedule_ampm = item_time.strftime("%p")
-
+            
             print("--> Filling schedule time...")
             page.locator('input[type="date"]').fill(schedule_date)
             page.select_option("select[aria-label='Hour']", schedule_hour)
@@ -182,12 +185,16 @@ def perform_tweeting(page: Page, items_to_process: list):
             page.locator('[data-testid="scheduledConfirmationPrimaryAction"]').click()
             page.wait_for_timeout(1000)
             take_shot(page, f"15_tweet_{item_id}_schedule_confirmed")
+            
+            print("--> Clicking final 'Schedule' button using focus and enter...")
+            schedule_button = page.locator('[data-testid="tweetButton"]:not([aria-disabled="true"])')
+            schedule_button.wait_for(timeout=10000)
+            schedule_button.focus()
+            page.keyboard.press("Enter")
 
-            print("--> Clicking final 'Schedule' button...")
-            page.locator('[data-testid="tweetButton"]').click()
             take_shot(page, f"16_tweet_{item_id}_scheduled_final")
             print("✅ Tweet scheduled successfully.")
-
+        
         print("-> Waiting 5 seconds before next item...")
         page.wait_for_timeout(5000)
 
