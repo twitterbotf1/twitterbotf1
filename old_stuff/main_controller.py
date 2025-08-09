@@ -1,133 +1,191 @@
+# --- BEFORE ---
+# 5. Conditionally clear the 'processed_urls' table
+if source_table == "processed_urls":
+    print("\n--- Clearing 'processed_urls' table ---")
+    try:
+        # Call the dedicated script to perform this action safely
+        clear_script_path = os.path.join("common", "clear_processed_table.py")
+        subprocess.run([sys.executable, clear_script_path], check=True, env=os.environ.copy())
+        print("✅ 'processed_urls' table has been cleared.")
+    except Exception as e:
+        print(f"❌ Failed to clear 'processed_urls' table: {e}", file=sys.stderr)
+
+# --- AFTER ---
+# 5. Conditionally clear the 'processed_urls' table
+# if source_table == "processed_urls":
+#     print("\n--- Clearing 'processed_urls' table ---")
+#     try:
+#         # Call the dedicated script to perform this action safely
+#         clear_script_path = os.path.join("common", "clear_processed_table.py")
+#         subprocess.run([sys.executable, clear_script_path], check=True, env=os.environ.copy())
+#         print("✅ 'processed_urls' table has been cleared.")
+#     except Exception as e:
+#         print(f"❌ Failed to clear 'processed_urls' table: {e}", file=sys.stderr)```
+
+### 2. Adapt the New Login Script
+
+We will make the new login script generic and place it in the `common` directory. The main controller will then be updated to call this single script for all bots.
+
+**Action 1: Create the new generic login script.**
+
+Create a new file named `login.py` inside the `old_stuff/common/` directory with the following content. This version is adapted from your working script to be reusable for all bot categories.
+
+**New File:** `old_stuff/common/login.py`
+
+```python
 import os
 import sys
-import subprocess
-import json
-from supabase import create_client, Client
-from dotenv import load_dotenv
+import shutil
+import time
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+import git
 
-# Load environment variables from a .env file if it exists (for local testing)
-load_dotenv()
+# --- Credentials from Generic Environment Variables ---
+EMAIL = os.getenv("TWITTER_EMAIL")
+PASSWORD = os.getenv("TWITTER_PASSWORD")
+USERNAME = os.getenv("TWITTER_USERNAME")
+BOT_CATEGORY = os.getenv("BOT_CATEGORY") # e.g., "formula", "tech"
 
-# --- Configuration ---
-# List of all bot categories, must match the directory names
-BOT_CATEGORIES = ["formula", "tech", "hollywood", "movies", "unews", "news"]
-# Get Supabase credentials from environment variables (set in GitHub secrets)
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+# --- Directory and Repository Setup ---
+LOGIN_DATA_DIR = Path(f"./{BOT_CATEGORY}/login_data")
+SCREENSHOT_DIR = Path(f"./debug_screenshots/{BOT_CATEGORY}")
+TEMP_OTP_DIR = Path(f"./{BOT_CATEGORY}/temp_otp_repo")
+LOGIN_DATA_DIR.mkdir(parents=True, exist_ok=True)
+SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
-def fetch_data(supabase: Client):
-    """
-    Fetches data from 'processed_urls', with a fallback to 'to_process'.
-    Returns the data and the name of the table it came from.
-    """
-    source_table = None
-    data = []
+# --- OTP Configuration ---
+OTP_REPO_URL = "https://github.com/twitterbotf1/login_otps"
+OTP_FILE_IN_REPO = Path(f"{BOT_CATEGORY}/otp.txt")
+OTP_CHECK_TEXT = "check your email"
+EXTRA_VERIFICATION_TEXT = "unusual login activity"
 
-    print("Attempting to fetch data from 'processed_urls'...")
-    response_processed = supabase.table("processed_urls").select("*").execute()
-    
-    if response_processed.data:
-        print("✅ Data found in 'processed_urls'.")
-        data = response_processed.data
-        source_table = "processed_urls"
-    else:
-        print("ℹ️ 'processed_urls' is empty. Falling back to 'to_process'.")
-        response_to_process = supabase.table("to_process").select("*").execute()
-        if response_to_process.data:
-            print("✅ Data found in 'to_process'.")
-            data = response_to_process.data
-            source_table = "to_process"
-        else:
-            print("ℹ️ Both 'processed_urls' and 'to_process' are empty.")
-            
-    return data, source_table
+# --- Helper Functions ---
+def take_shot(page, name):
+    screenshot_path = SCREENSHOT_DIR / f"{name}.png"
+    print(f"📸 Taking screenshot: {screenshot_path}")
+    try:
+        page.screenshot(path=screenshot_path)
+    except Exception as e:
+        print(f"⚠️ Could not take screenshot: {e}", file=sys.stderr)
 
-def main():
-    """Main controller function to orchestrate the entire workflow."""
-    # 1. Initialize Supabase Client
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        print("❌ Error: SUPABASE_URL and SUPABASE_KEY environment variables are not set.", file=sys.stderr)
-        sys.exit(1) # Exit with an error
-        
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-    # 2. Fetch data with fallback logic
-    all_data, source_table = fetch_data(supabase)
-
-    # If no data was found in either table, stop the entire workflow.
-    if not all_data:
-        print("No data to process. Exiting gracefully.")
-        sys.exit(0) # Exit successfully, as this isn't an error
-
-    # 3. Categorize the fetched data into lists for each bot
-    print("\nCategorizing data...")
-    categorized_data = {bot: [] for bot in BOT_CATEGORIES}
-    for row in all_data:
-        bot_tag = row.get("bot")
-        if bot_tag in categorized_data:
-            categorized_data[bot_tag].append(row)
-
-    # 4. Loop through each category and process it
-    print("\n--- Starting Bot Processing Loop ---")
-    for category in BOT_CATEGORIES:
-        if not categorized_data[category]:
-            print(f"\nSkipping category '{category}': No data found.")
-            continue
-
-        print(f"\n--- Processing category: {category} ---")
-        
-        login_script_path = os.path.join(category, "login.py")
-        tweet_script_path = os.path.join(category, "tweet.py")
-
+def get_otp_from_repo():
+    for attempt in range(3):
+        print(f"OTP Attempt {attempt + 1} of 3.")
+        print("...Waiting 2 minutes for manual OTP update...")
+        time.sleep(120)
         try:
-            # Prepare a dedicated environment for the subprocesses.
-            # This is how we pass the correct Twitter credentials to the generic scripts.
-            proc_env = os.environ.copy()
-            proc_env["TWITTER_EMAIL"] = os.getenv(f"{category.upper()}_EMAIL")
-            proc_env["TWITTER_USERNAME"] = os.getenv(f"{category.upper()}_USERNAME")
-            proc_env["TWITTER_PASSWORD"] = os.getenv(f"{category.upper()}_PASSWORD")
-
-            # Check if the credentials for this category are actually present in the secrets
-            if not all([proc_env["TWITTER_EMAIL"], proc_env["TWITTER_USERNAME"], proc_env["TWITTER_PASSWORD"]]):
-                print(f"⚠️ Warning: Missing one or more secrets ({category.upper()}_EMAIL, _USERNAME, _PASSWORD). Skipping category.")
-                continue
-
-            # --- Step A: Run the login script for the category ---
-            print(f"Executing login for '{category}'...")
-            subprocess.run([sys.executable, login_script_path], check=True, env=proc_env, capture_output=True, text=True)
-            print(f"✅ Login successful for '{category}'.")
-
-            # --- Step B: Run the tweeting script for the category ---
-            print(f"Executing tweeting for '{category}'...")
-            # Pass the category's data to the script as a JSON string via command-line argument
-            data_to_pass = json.dumps(categorized_data[category])
-            
-            subprocess.run([sys.executable, tweet_script_path, data_to_pass], check=True, env=proc_env, capture_output=True, text=True)
-            print(f"✅ Tweeting process completed for '{category}'.")
-
-        except subprocess.CalledProcessError as e:
-            # This catches errors if either login.py or tweet.py fails (exits with non-zero code)
-            print(f"❌ An error occurred while processing category '{category}'. The script failed.", file=sys.stderr)
-            print(f"Stderr of failed script:\n{e.stderr}", file=sys.stderr)
-            print("Skipping to the next category.")
-            continue # Move to the next bot
-        except FileNotFoundError:
-            print(f"❌ Error: Script not found for category '{category}'. Make sure {login_script_path} and {tweet_script_path} exist.", file=sys.stderr)
-            continue
-
-    # 5. Conditionally clear the 'processed_urls' table
-    if source_table == "processed_urls":
-        print("\n--- Clearing 'processed_urls' table ---")
-        try:
-            # Call the dedicated script to perform this action safely
-            clear_script_path = os.path.join("common", "clear_processed_table.py")
-            subprocess.run([sys.executable, clear_script_path], check=True, env=os.environ.copy())
-            print("✅ 'processed_urls' table has been cleared.")
+            if TEMP_OTP_DIR.exists():
+                shutil.rmtree(TEMP_OTP_DIR)
+            print(f"...Cloning repository from {OTP_REPO_URL}")
+            git.Repo.clone_from(OTP_REPO_URL, str(TEMP_OTP_DIR))
+            otp_file_path = TEMP_OTP_DIR / OTP_FILE_IN_REPO
+            if otp_file_path.is_file():
+                otp_code = otp_file_path.read_text().strip()
+                if otp_code:
+                    print("✅ OTP code found in repository.")
+                    return otp_code
+            else:
+                 print(f"...Cloned repo, but file '{OTP_FILE_IN_REPO}' not found.")
         except Exception as e:
-            print(f"❌ Failed to clear 'processed_urls' table: {e}", file=sys.stderr)
+            print(f"⚠️ An error occurred during git clone/read on attempt {attempt + 1}: {e}", file=sys.stderr)
+    print("❌ All 3 attempts to fetch OTP from the repository failed.", file=sys.stderr)
+    return None
 
-    print("\n--- Workflow finished ---")
+def is_logged_in(page):
+    page.wait_for_timeout(5000)
+    page_text = page.inner_text("body").lower()
+    logged_in = "home" in page_text or "post" in page_text
+    print(f"🕵️‍♂️ Verification check: Is 'Home' or 'Post' visible? {logged_in}")
+    return logged_in
 
+# --- Main Login Function ---
+def main():
+    if not all([EMAIL, USERNAME, PASSWORD, BOT_CATEGORY]):
+        print("❌ Error: Credentials or BOT_CATEGORY were not provided via environment variables.", file=sys.stderr)
+        sys.exit(1)
+
+    with sync_playwright() as p:
+        browser = None
+        try:
+            print("🚀 Launching browser for a headless login...")
+            browser = p.chromium.launch_persistent_context(
+                user_data_dir=str(LOGIN_DATA_DIR),
+                headless=True,
+                viewport={"width": 1280, "height": 720}
+            )
+            page = browser.new_page()
+            page.goto("https://x.com/login")
+            page.wait_for_timeout(5000)
+            take_shot(page, "01_start_page")
+
+            print("Typing email...")
+            page.mouse.click(580, 350)
+            page.keyboard.type(EMAIL)
+            take_shot(page, "02_email_entered")
+
+            print("Clicking 'Next' after email...")
+            page.mouse.click(640, 430)
+            page.wait_for_timeout(5000)
+            take_shot(page, "03_after_email_next")
+
+            if EXTRA_VERIFICATION_TEXT in page.inner_text("body").lower():
+                print("🔹 Extra verification step detected. Entering username.")
+                page.mouse.click(520, 320)
+                page.keyboard.type(USERNAME)
+                take_shot(page, "04_extra_username_entered")
+                print("Clicking 'Next' after username...")
+                page.mouse.click(640, 640)
+                page.wait_for_timeout(5000)
+                take_shot(page, "05_after_username_next")
+
+            print("Typing password...")
+            page.mouse.click(500, 300)
+            page.keyboard.type(PASSWORD)
+            take_shot(page, "06_password_entered")
+
+            print("Clicking final 'Login' button...")
+            page.mouse.click(640, 590)
+            page.wait_for_timeout(7000)
+            take_shot(page, "07_after_password_login_click")
+
+            if OTP_CHECK_TEXT in page.inner_text("body").lower():
+                print("-> OTP screen detected. Starting OTP retrieval process...")
+                take_shot(page, "08a_otp_screen_detected")
+                otp_code = get_otp_from_repo()
+                if otp_code:
+                    print(f"✅ OTP found. Entering it now.")
+                    page.mouse.click(550, 350)
+                    page.keyboard.type(otp_code)
+                    take_shot(page, "08b_otp_entered")
+                    print("Clicking 'Next' after OTP...")
+                    page.mouse.click(640, 640)
+                    page.wait_for_timeout(7000)
+                    take_shot(page, "08c_after_otp_next_click")
+                else:
+                    print("❌ OTP retrieval process failed after multiple attempts.", file=sys.stderr)
+                    take_shot(page, "98_otp_failure")
+                    sys.exit(1)
+
+            if is_logged_in(page):
+                print("✅ Login successful. Main feed is visible.")
+                take_shot(page, "10_final_success")
+            else:
+                print("❌ Login failed. Main feed was not visible.", file=sys.stderr)
+                take_shot(page, "99_final_failure")
+                sys.exit(1)
+
+        except Exception as e:
+            print(f"❌ A critical error occurred during login: {e}", file=sys.stderr)
+            if 'page' in locals():
+                take_shot(page, "99_exception_failure")
+            sys.exit(1)
+        finally:
+            if browser:
+                browser.close()
+            if TEMP_OTP_DIR.exists():
+                shutil.rmtree(TEMP_OTP_DIR)
+                print("🧹 Cleaned up temporary OTP directory.")
 
 if __name__ == "__main__":
     main()
