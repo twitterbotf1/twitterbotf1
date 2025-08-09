@@ -1,9 +1,3 @@
---- Supabase Data Fetch Log ---
-Timestamp: 2025-08-09T18:19:28.520548
-Source Table: processed_urls
--------------------------------------
-
-Data Fetched:
 [
     {
         "id": 106,
