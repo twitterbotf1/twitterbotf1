@@ -5,14 +5,22 @@ import json
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
+# Load environment variables from a .env file if it exists
 load_dotenv()
 
 # --- Configuration ---
+# List of all bot categories, must match the directory names
 BOT_CATEGORIES = ["formula", "tech", "hollywood", "movies", "unews", "news"]
+
+# Get Supabase credentials from environment variables
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 def fetch_data(supabase: Client):
+    """
+    Fetches data from 'processed_urls', with a fallback to 'to_process'.
+    Returns the data and the name of the table it came from.
+    """
     source_table = None
     data = []
     print("Attempting to fetch data from 'processed_urls'...")
@@ -33,17 +41,22 @@ def fetch_data(supabase: Client):
     return data, source_table
 
 def main():
+    """Main controller function to orchestrate the entire workflow."""
+    # 1. Initialize Supabase Client
     if not SUPABASE_URL or not SUPABASE_KEY:
         print("❌ Error: SUPABASE_URL and SUPABASE_KEY environment variables are not set.", file=sys.stderr)
         sys.exit(1)
     
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+    # 2. Fetch data with fallback logic
     all_data, source_table = fetch_data(supabase)
 
     if not all_data:
         print("No data to process. Exiting gracefully.")
         sys.exit(0)
 
+    # 3. Categorize the fetched data
     print("\nCategorizing data...")
     categorized_data = {bot: [] for bot in BOT_CATEGORIES}
     for row in all_data:
@@ -51,6 +64,7 @@ def main():
         if bot_tag in categorized_data:
             categorized_data[bot_tag].append(row)
 
+    # 4. Loop through each category and process it
     print("\n--- Starting Bot Processing Loop ---")
     for category in BOT_CATEGORIES:
         if not categorized_data[category]:
@@ -59,26 +73,30 @@ def main():
 
         print(f"\n--- Processing category: {category} ---")
         
-        # --- MODIFIED: Use the single common login script ---
+        # Define paths to the single, common scripts
         login_script_path = os.path.join("common", "login.py")
-        tweet_script_path = os.path.join(category, "tweet.py")
+        tweet_script_path = os.path.join("common", "tweet.py")
 
         try:
+            # Prepare a dedicated environment for the subprocesses.
             proc_env = os.environ.copy()
             proc_env["TWITTER_EMAIL"] = os.getenv(f"{category.upper()}_EMAIL")
             proc_env["TWITTER_USERNAME"] = os.getenv(f"{category.upper()}_USERNAME")
             proc_env["TWITTER_PASSWORD"] = os.getenv(f"{category.upper()}_PASSWORD")
-            # --- ADDED: Pass the bot's category name to the login script ---
+            # Pass the bot's category name to the common scripts
             proc_env["BOT_CATEGORY"] = category
 
+            # Check if the credentials for this category are present
             if not all([proc_env["TWITTER_EMAIL"], proc_env["TWITTER_USERNAME"], proc_env["TWITTER_PASSWORD"]]):
                 print(f"⚠️ Warning: Missing one or more secrets for {category.upper()}. Skipping category.")
                 continue
 
+            # --- Step A: Run the login script ---
             print(f"Executing login for '{category}'...")
             subprocess.run([sys.executable, login_script_path], check=True, env=proc_env, capture_output=True, text=True)
             print(f"✅ Login successful for '{category}'.")
 
+            # --- Step B: Run the tweeting script ---
             print(f"Executing tweeting for '{category}'...")
             data_to_pass = json.dumps(categorized_data[category])
             subprocess.run([sys.executable, tweet_script_path, data_to_pass], check=True, env=proc_env, capture_output=True, text=True)
@@ -90,10 +108,10 @@ def main():
             print("Skipping to the next category.")
             continue
         except FileNotFoundError:
-            print(f"❌ Error: Script not found for category '{category}'. Make sure paths are correct.", file=sys.stderr)
+            print(f"❌ Error: A script was not found. Make sure common scripts are in the 'common' folder.", file=sys.stderr)
             continue
 
-    # --- DISABLED: The table clearing logic is now commented out ---
+    # 5. Conditionally clear the 'processed_urls' table (DISABLED)
     # if source_table == "processed_urls":
     #     print("\n--- Clearing 'processed_urls' table ---")
     #     try:
