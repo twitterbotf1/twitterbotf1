@@ -1,12 +1,16 @@
-name: NEW Bot Workflow
+name: Run NEW Bot Workflow and Save Data
 
-# This allows you to run the workflow manually from the Actions tab
 on:
   workflow_dispatch:
 
 jobs:
   run-and-save-bots:
     runs-on: ubuntu-latest
+
+    # --- THIS IS THE FIX ---
+    # Grant the GITHUB_TOKEN write permission to commit back to the repo
+    permissions:
+      contents: write
 
     steps:
       - name: 1. Check out repository code
@@ -26,7 +30,6 @@ jobs:
         run: python -m playwright install chromium
 
       - name: 5. Run the Main Bot Controller
-        # This step runs the main script from within the new_stuff directory.
         env:
           # Supabase Credentials
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -52,12 +55,10 @@ jobs:
           NEWS_USERNAME: ${{ secrets.NEWS_USERNAME }}
           NEWS_PASSWORD: ${{ secrets.NEWS_PASSWORD }}
         
-        # The working directory is set here so the script can find all its files
-        working-directory: ./new_stuff # <--- THIS LINE IS NOW CORRECT
+        working-directory: ./new_stuff
         run: python main_controller.py
 
       - name: 6. Commit and Push Session Data & Logs
-        # This action automatically finds any new or modified files and commits them.
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "BOT: Update session data and debug logs"
