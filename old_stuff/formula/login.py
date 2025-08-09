@@ -1,8 +1,8 @@
-# old_stuff/formula/login.py:
-
 import os
 import sys
-import time # Added for waiting
+import time
+import subprocess
+import shutil
 from pathlib import Path
 from playwright.sync_api import sync_playwright, Page, Playwright
 from dotenv import load_dotenv
@@ -14,12 +14,14 @@ EMAIL = os.getenv("TWITTER_EMAIL")
 USERNAME = os.getenv("TWITTER_USERNAME")
 PASSWORD = os.getenv("TWITTER_PASSWORD")
 
+# --- Correct URL for your public OTP repository ---
+OTP_REPO_URL = "https://github.com/twitterbotf1/login_otps.git"
+
 # --- Paths ---
-# Save screenshots in a top-level folder for easy access in the repo
-DEBUG_DIR = Path(__file__).parents[1] / "debug_screenshots" / "formula"
+BOT_NAME = Path(__file__).parent.name
+DEBUG_DIR = Path(__file__).parents[1] / "debug_screenshots" / BOT_NAME
 LOGIN_DATA_DIR = Path(__file__).parent / "login_data"
-# Path to the OTP verification file at the project root
-VERI_FILE_PATH = Path(__file__).parents[2] / "veri.txt"
+TEMP_OTP_DIR = Path(__file__).parent / "temp_otp_repo"
 
 # Ensure directories exist
 LOGIN_DATA_DIR.mkdir(exist_ok=True)
@@ -27,7 +29,7 @@ DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- Constants ---
 CHECK_TEXT = "Enter your phone number or username"
-OTP_CHECK_TEXT = "check your email" # Text to look for on the OTP page
+OTP_CHECK_TEXT = "check your email"
 
 def take_shot(page: Page, name: str):
     """Saves a screenshot for debugging."""
@@ -39,8 +41,34 @@ def is_logged_in(page: Page) -> bool:
     page.wait_for_timeout(4000)
     return page.locator('[data-testid="primaryColumn"]').is_visible()
 
+def get_otp_from_repo() -> str:
+    """Clones the OTP repo and reads the code from the correct otp.txt file."""
+    if TEMP_OTP_DIR.exists():
+        shutil.rmtree(TEMP_OTP_DIR) # Clean up old clone
+
+    try:
+        # Clone the public repo
+        subprocess.run(
+            ["git", "clone", "--depth", "1", OTP_REPO_URL, str(TEMP_OTP_DIR)],
+            check=True, capture_output=True, text=True
+        )
+        
+        # --- CORRECTED: Looking for 'otp.txt' as requested ---
+        otp_file = TEMP_OTP_DIR / BOT_NAME / "otp.txt"
+        if otp_file.exists():
+            return otp_file.read_text().strip()
+            
+    except subprocess.CalledProcessEror as e:
+        print(f"❌ Failed to clone OTP repo: {e.stderr}", file=sys.stderr)
+        return ""
+    except Exception as e:
+        print(f"❌ An error occurred checking for OTP: {e}", file=sys.stderr)
+        return ""
+    
+    return ""
+
 def perform_full_login(p: Playwright) -> bool:
-    """Performs a full login, screenshotting every step."""
+    """Performs a full login, polling for OTP if needed."""
     print("🚀 Performing a full, step-by-step login...")
     browser = None
     try:
@@ -68,7 +96,6 @@ def perform_full_login(p: Playwright) -> bool:
             page.locator('input[name="text"]').fill(USERNAME)
             page.wait_for_timeout(1000)
             take_shot(page, "04_extra_username_entered")
-
             page.locator("text=Next").click()
             page.wait_for_timeout(3000)
             take_shot(page, "05_after_username_next")
@@ -81,39 +108,38 @@ def perform_full_login(p: Playwright) -> bool:
         page.wait_for_timeout(7000)
         take_shot(page, "07_after_password_login_click")
 
-        # --- NEW OTP HANDLING LOGIC ---
+        # --- OTP Polling Logic ---
         if OTP_CHECK_TEXT in page.inner_text("body").lower():
-            print(f"-> OTP screen detected. Looking for text: '{OTP_CHECK_TEXT}'")
+            print(f"-> OTP screen detected for bot '{BOT_NAME}'.")
             take_shot(page, "08a_otp_screen_detected")
             
             otp_code = ""
-            for i in range(5): # Loop 5 times (total 5 minutes)
-                print(f"-> Checking 'veri.txt' for OTP... (Attempt {i+1}/5)")
-                if VERI_FILE_PATH.exists() and VERI_FILE_PATH.read_text().strip():
-                    otp_code = VERI_FILE_PATH.read_text().strip()
-                    print(f"✅ OTP found in 'veri.txt': {otp_code}")
+            for i in range(5): 
+                print(f"-> Checking remote repo for OTP... (Attempt {i+1}/5)")
+                otp_code = get_otp_from_repo()
+                
+                if otp_code:
+                    print(f"✅ OTP found in remote repo: {otp_code}")
                     break
                 else:
-                    if i < 4: # Don't wait after the last attempt
-                        print("-> 'veri.txt' is empty. Waiting for 60 seconds.")
+                    if i < 4:
+                        print("-> OTP not found. Waiting 60 seconds...")
                         time.sleep(60)
             
             if otp_code:
                 print("-> Entering OTP...")
-                page.mouse.click(480, 380) # Click on the OTP text box
+                page.mouse.click(480, 380)
                 page.keyboard.type(otp_code)
-                page.wait_for_timeout(1000)
                 take_shot(page, "08b_otp_entered")
 
                 print("-> Clicking Next button after OTP...")
-                page.mouse.click(650, 670) # Click on the Next button
+                page.mouse.click(650, 670)
                 page.wait_for_timeout(7000)
                 take_shot(page, "08c_after_otp_next_click")
             else:
-                print("❌ Timed out waiting for OTP in 'veri.txt' after 5 minutes.", file=sys.stderr)
+                print(f"❌ Timed out waiting for OTP for '{BOT_NAME}'.", file=sys.stderr)
                 take_shot(page, "98_otp_timeout_failure")
-                return False # Exit login process if OTP times out
-        # --- END OF OTP HANDLING LOGIC ---
+                return False
 
         if is_logged_in(page):
             print("✅ Full login successful.")
@@ -130,20 +156,18 @@ def perform_full_login(p: Playwright) -> bool:
         return False
     finally:
         if browser:
+            if TEMP_OTP_DIR.exists():
+                shutil.rmtree(TEMP_OTP_DIR)
             browser.close()
 
 def main():
     if not all([EMAIL, USERNAME, PASSWORD]):
         print("❌ Error: Twitter credentials not set.", file=sys.stderr)
         sys.exit(1)
+        
     with sync_playwright() as p:
         browser = None
         try:
-            # Ensure the veri.txt file is empty before starting
-            if VERI_FILE_PATH.exists():
-                VERI_FILE_PATH.write_text("")
-                print("-> Cleared 'veri.txt' for the new session.")
-
             browser = p.chromium.launch_persistent_context(
                 user_data_dir=str(LOGIN_DATA_DIR),
                 headless=True
@@ -151,7 +175,7 @@ def main():
             page = browser.new_page()
             print("Checking for existing valid session...")
             page.goto("https://twitter.com/home", wait_until="load")
-            take_shot(page, "00_check_existing_session") # Screenshot of initial check
+            take_shot(page, "00_check_existing_session")
 
             if is_logged_in(page):
                 print("✅ Reused existing session successfully.")
