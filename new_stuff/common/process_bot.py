@@ -139,15 +139,17 @@ def perform_tweeting(page: Page, items_to_process: list):
         page.wait_for_timeout(3000)
         take_shot(page, f"10_tweet_{item_id}_new_tweet_clicked")
 
-        # Click the textarea to focus it, then type the text
+        # --- THIS IS THE NEW FIX ---
+        # Click the textarea to make sure the cursor is active.
         print("-> Clicking tweet textarea to focus...")
-        textarea_locator = page.locator('[data-testid="tweetTextarea_0"]')
-        textarea_locator.click()
-        page.wait_for_timeout(500)
+        page.locator('[data-testid="tweetTextarea_0"]').click()
+        page.wait_for_timeout(500) # Brief pause to ensure focus is set.
 
-        print("-> Typing tweet text...")
-        textarea_locator.press_sequentially(tweet_text, delay=50)
-        
+        # Use the page's keyboard to type directly, simulating a real user.
+        print("-> Typing text using direct keyboard simulation...")
+        page.keyboard.type(tweet_text, delay=30)
+        # --- END OF NEW FIX ---
+
         take_shot(page, f"11_tweet_{item_id}_textarea_filled")
         
         print("-> Waiting for link preview card...")
