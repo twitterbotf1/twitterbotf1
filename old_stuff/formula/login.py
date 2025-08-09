@@ -1,5 +1,8 @@
+# old_stuff/formula/login.py:
+
 import os
 import sys
+import time # Added for waiting
 from pathlib import Path
 from playwright.sync_api import sync_playwright, Page, Playwright
 from dotenv import load_dotenv
@@ -15,12 +18,16 @@ PASSWORD = os.getenv("TWITTER_PASSWORD")
 # Save screenshots in a top-level folder for easy access in the repo
 DEBUG_DIR = Path(__file__).parents[1] / "debug_screenshots" / "formula"
 LOGIN_DATA_DIR = Path(__file__).parent / "login_data"
+# Path to the OTP verification file at the project root
+VERI_FILE_PATH = Path(__file__).parents[2] / "veri.txt"
 
 # Ensure directories exist
 LOGIN_DATA_DIR.mkdir(exist_ok=True)
 DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
+# --- Constants ---
 CHECK_TEXT = "Enter your phone number or username"
+OTP_CHECK_TEXT = "check your email" # Text to look for on the OTP page
 
 def take_shot(page: Page, name: str):
     """Saves a screenshot for debugging."""
@@ -72,13 +79,48 @@ def perform_full_login(p: Playwright) -> bool:
 
         page.locator('[data-testid="LoginForm_Login_Button"]').click()
         page.wait_for_timeout(7000)
-        take_shot(page, "07_after_final_login_click")
+        take_shot(page, "07_after_password_login_click")
+
+        # --- NEW OTP HANDLING LOGIC ---
+        if OTP_CHECK_TEXT in page.inner_text("body").lower():
+            print(f"-> OTP screen detected. Looking for text: '{OTP_CHECK_TEXT}'")
+            take_shot(page, "08a_otp_screen_detected")
+            
+            otp_code = ""
+            for i in range(5): # Loop 5 times (total 5 minutes)
+                print(f"-> Checking 'veri.txt' for OTP... (Attempt {i+1}/5)")
+                if VERI_FILE_PATH.exists() and VERI_FILE_PATH.read_text().strip():
+                    otp_code = VERI_FILE_PATH.read_text().strip()
+                    print(f"✅ OTP found in 'veri.txt': {otp_code}")
+                    break
+                else:
+                    if i < 4: # Don't wait after the last attempt
+                        print("-> 'veri.txt' is empty. Waiting for 60 seconds.")
+                        time.sleep(60)
+            
+            if otp_code:
+                print("-> Entering OTP...")
+                page.mouse.click(480, 380) # Click on the OTP text box
+                page.keyboard.type(otp_code)
+                page.wait_for_timeout(1000)
+                take_shot(page, "08b_otp_entered")
+
+                print("-> Clicking Next button after OTP...")
+                page.mouse.click(650, 670) # Click on the Next button
+                page.wait_for_timeout(7000)
+                take_shot(page, "08c_after_otp_next_click")
+            else:
+                print("❌ Timed out waiting for OTP in 'veri.txt' after 5 minutes.", file=sys.stderr)
+                take_shot(page, "98_otp_timeout_failure")
+                return False # Exit login process if OTP times out
+        # --- END OF OTP HANDLING LOGIC ---
 
         if is_logged_in(page):
             print("✅ Full login successful.")
             return True
         else:
             print("❌ Full login failed.", file=sys.stderr)
+            take_shot(page, "99_login_failed")
             return False
 
     except Exception as e:
@@ -97,6 +139,11 @@ def main():
     with sync_playwright() as p:
         browser = None
         try:
+            # Ensure the veri.txt file is empty before starting
+            if VERI_FILE_PATH.exists():
+                VERI_FILE_PATH.write_text("")
+                print("-> Cleared 'veri.txt' for the new session.")
+
             browser = p.chromium.launch_persistent_context(
                 user_data_dir=str(LOGIN_DATA_DIR),
                 headless=True
