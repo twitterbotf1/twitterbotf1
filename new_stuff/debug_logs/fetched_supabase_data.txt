@@ -1,5 +1,5 @@
 --- Supabase Data Fetch Log ---
-Timestamp: 2025-08-09T18:14:58.217820
+Timestamp: 2025-08-09T18:19:28.520548
 Source Table: processed_urls
 -------------------------------------
 
@@ -9,28 +9,28 @@ Data Fetched:
         "id": 106,
         "url": "https://racingnews365.com/lando-norris-reveals-lack-of-belief-in-f1-career-first",
         "bot": "formula",
-        "time": "2025-08-09T18:38:09.037715+00:00",
+        "time": "2025-08-09T23:58:09.037715+00:00",
         "title": "Lando Norris reveals lack of belief in F1 career first"
     },
     {
         "id": 107,
         "url": "https://racingnews365.com/toto-wolff-tees-up-classic-f1-title-fight-can-you-imagine-that",
         "bot": "formula",
-        "time": "2025-08-09T18:48:14.61911+00:00",
+        "time": "2025-08-09T23:58:09.037715+00:00",
         "title": "Toto Wolff tees up 'classic' F1 title fight: 'Can you imagine that?'"
     },
     {
         "id": 113,
         "url": "https://www.gazzetta.it/motori/ferrari/06-08-2025/f1-ecclestone-va-giu-duro-hamilton-che-senso-ha-correre-cosi-ritirati-ora.shtml",
         "bot": "formula",
-        "time": "2025-08-09T17:22:48.10748+00:00",
+        "time": "2025-08-09T23:58:09.037715+00:00",
         "title": "Ecclestone va gi\u00f9 duro: \"Hamilton, che senso ha correre cos\u00ec? Ritirati ora!\""
     },
     {
         "id": 116,
         "url": "https://www.autosport.com/f1/news/toto-wolff-george-russell-was-stronger-driver-than-lewis-hamilton-in-f1-2024/10749085",
         "bot": "formula",
-        "time": "2025-08-09T17:32:04.851665+00:00",
+        "time": "2025-08-09T23:58:09.037715+00:00",
         "title": "Could not fetch preview"
     }
 ]
